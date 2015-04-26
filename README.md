@@ -30,14 +30,28 @@ Teensy reporting Yaw pitch roll in the the .Rot part of the hat frame. Reporting
 produces hat frames around 80fps with serial settings of 115200, 8 data 1 stop no parity and RTS/CTS handshake.
 
 Helpers:
+
 Q: I want to send serial data to the Hatire plugin from my aurduino, what is the hat frame format?
+
 A: Easiest answer I can gibe is to cut and past my Hat Structure from my arduino code for you. I will probably post my entire sketch here soon anyway:
+
+
+
 struct Hatire
+
 {
+
   int16_t Begin;   //2 bytes ALWAYS 0xAAAA
+  
   uint16_t Code;  //2 bytes (<=1000 - all normal, 3000 - initialising, >9000 some kind of error.)
+  
   float Rot[3];       //3x4 bytes (float values for Yaw, Pitch, Roll)
+  
   float Trans[3];   //3x4 bytes (float values for X, Y and Z)
+  
   int16_t End;      //2 bytes ALWAYS 0x5555
+  
 }; // total of 30 bytes to send serially
+
+
 
