@@ -50,6 +50,8 @@ FTNoIR_Tracker::FTNoIR_Tracker()
 	Begin.append((char) 0xAA);
 	End.append((char) 0x55);
 	End.append((char) 0x55);
+	
+	flDiagnostics.setFileName(QCoreApplication::applicationDirPath() + "/HATDiagnostics.txt");
 
 	settings.load_ini();
 }
@@ -62,6 +64,7 @@ FTNoIR_Tracker::~FTNoIR_Tracker()
 
 #ifdef OPENTRACK_API
             QByteArray Msg;
+			Log("Tracker shut down");
             ComPort->write(sCmdStop);
             if (!ComPort->waitForBytesWritten(1000)) {
                 emit sendMsgInfo("TimeOut in writing CMD");
@@ -166,6 +169,11 @@ void FTNoIR_Tracker::sendcmd(const QByteArray &cmd) {
 	if (cmd.length()>0) {
 		if (ComPort->isOpen() ) 
 		{
+			QString logMess;
+			logMess.append("SEND '");
+			logMess.append(cmd);
+			logMess.append("'");
+			Log(logMess);
 			ComPort->write(cmd);
 			if (!ComPort->waitForBytesWritten(1000)) {
 				emit sendMsgInfo("TimeOut in writing CMD");
@@ -175,12 +183,15 @@ void FTNoIR_Tracker::sendcmd(const QByteArray &cmd) {
 				Msg.append(cmd);
 				Msg.append("'\r\n");
 			}
-			 
-			if  ( !ComPort->waitForReadyRead(2000)) {
+			#ifndef _WIN32 // WaitForReadyRead isn't working well and there are some reports of it being a win32 issue. We can live without it anyway
+			if  ( !ComPort->waitForReadyRead(1000)) {
 				emit sendMsgInfo("TimeOut in response to CMD") ;
 			} else {
 				emit sendMsgInfo(Msg);
 			}
+			#else
+				emit sendMsgInfo(Msg);
+			#endif
 		} else {
 			emit sendMsgInfo("ComPort not open")  ;
 		}
@@ -206,6 +217,8 @@ void FTNoIR_Tracker::Initialize( QFrame *videoframe )
 	CptError=0;
 	dataRead.clear();
 	frame_cnt=0;
+	
+	Log("INITIALISING HATIRE");
 
 	settings.load_ini();
 	applysettings(settings);
@@ -250,6 +263,7 @@ void FTNoIR_Tracker::StartTracker(HWND parent_window)
 {
 	// Send  START cmd to IMU
 	sendcmd(sCmdStart);
+	Log("Starting Tracker");
 	// Wait start MPU sequence 
 	for (int i = 1; i <=iDelaySeq;  i+=50) {
 		if (ComPort->waitForReadyRead(50)) break;
@@ -261,6 +275,8 @@ void FTNoIR_Tracker::StartTracker(HWND parent_window)
 void FTNoIR_Tracker::StopTracker( bool exit )
 {
 	QByteArray Msg;
+	
+	Log("Stopping tracker");
 	if (sCmdStop.length()>0) {
 		if (ComPort->isOpen() ) 
 		{
@@ -298,6 +314,8 @@ void FTNoIR_Tracker::start_tracker(QFrame*)
 	applysettings(settings);
 	ComPort =  new QSerialPort(this);
 	ComPort->setPortName(sSerialPortName); 
+	Log("Starting Tracker");
+
 	if (ComPort->open(QIODevice::ReadWrite ) == true) { 
 		connect(ComPort, SIGNAL(readyRead()), this, SLOT(SerialRead()));
 		if (  
@@ -346,6 +364,8 @@ void FTNoIR_Tracker::start_tracker(QFrame*)
 //send CENTER to Arduino
 void FTNoIR_Tracker::center() {
     qDebug()   << " HAT send CENTER ";
+	Log("Sending Centre Command");
+
     sendcmd(sCmdCenter);
 }
 
@@ -369,6 +389,7 @@ bool FTNoIR_Tracker::GiveHeadPoseData(THeadPoseData *data)
 {
     QMutexLocker lck(&mutex);
 	while  (dataRead.length()>=30) {
+		Log(dataRead.toHex());
 		if ((dataRead.startsWith(Begin) &&  ( dataRead.mid(28,2)==End )) )  { // .Begin==0xAAAA .End==0x5555
 			QDataStream  datastream(dataRead.left(30));
 			if (bBigEndian)	datastream.setByteOrder(QDataStream::BigEndian );
@@ -502,6 +523,7 @@ void FTNoIR_Tracker::applysettings(const TrackerSettings& settings){
 	bInvertX = settings.InvertX;
 	bInvertY = settings.InvertY;
 	bInvertZ = settings.InvertZ;
+	bEnableLogging = settings.EnableLogging;
 
 	iRollAxe= settings.RollAxe;
 	iPitchAxe= settings.PitchAxe;
@@ -533,6 +555,23 @@ void FTNoIR_Tracker::applysettings(const TrackerSettings& settings){
 #endif
 }
 
+void FTNoIR_Tracker::Log(QString message)
+{
+	// Drop out immediately if logging is off. Yes, there is still some overhead because of passing strings around for no reason.
+	// that's unfortunate and I'll monitor the impact and see if it needs a more involved fix.
+	if (!bEnableLogging) return;
+	QString logMessage;
+
+	if (flDiagnostics.open(QIODevice::ReadWrite | QIODevice::Append))
+	{
+		QTextStream out(&flDiagnostics);
+		QString milliSeconds;
+		milliSeconds = QString("%1").arg(QTime::currentTime().msec(), 3, 10, QChar('0'));
+		// We have a file
+		out << QTime::currentTime().toString() << "." << milliSeconds << ": " << message << "\r\n";
+		flDiagnostics.close();
+	}
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
